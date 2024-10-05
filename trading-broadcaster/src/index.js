@@ -5,7 +5,7 @@ const consumers = new Map();
 createTradingBroadcastServer();
 
 const getSymbols = async (symbols) => {
-  const uniqueSymbols = [...new Set(symbols)]; // Filter unique symbols
+  const uniqueSymbols = [...new Set(symbols)];
   const promises = uniqueSymbols.map(async (id) => {
     const url = `http://localhost:3000/api/symbols/${id}`;
     try {
@@ -73,13 +73,13 @@ function createTradingBroadcastServer() {
           const dataProviderSocket = new WebSocket(host);
 
           dataProviderSocket.on("error", (err) => {
-            dataProviderSocket.close();
-            ws.send(
-              JSON.stringify({
-                status: "not processed",
-                message: `Failed to connect to provider: ${err.message}`,
-              })
+            console.error(
+              `Retry attempt ${retryCount + 1} failed: `,
+              err.message
             );
+            setTimeout(() => {
+              retryWebSocketConnection(host, ws, retryCount + 1);
+            }, Math.min(1000 * 2 ** retryCount, 10000));
           });
 
           dataProviderSocket.on("open", () => {
@@ -127,7 +127,6 @@ function createTradingBroadcastServer() {
 
         case "clear-prices": {
           consumers.get(ws).latestPrices.clear();
-          ws.send(JSON.stringify({ action: "clear-prices" }));
           ws.send(JSON.stringify({ status: "processed" }));
           break;
         }
@@ -150,10 +149,43 @@ function createTradingBroadcastServer() {
           providerSocket.close()
         );
         consumers.delete(ws);
-        console.log("Client disconnected, resources cleaned up.");
+        console.log(
+          `Client disconnected, resources cleaned up. Active consumers: ${consumers.size}`
+        );
       }
     });
   });
 
   return tradingBroadcastServer;
+}
+
+function retryWebSocketConnection(host, ws, retryCount = 0) {
+  if (retryCount > 3) {
+    ws.send(
+      JSON.stringify({
+        status: "not processed",
+        message: `Failed to connect to provider after multiple attempts: ${host}`,
+      })
+    );
+    return;
+  }
+
+  const retrySocket = new WebSocket(host);
+
+  retrySocket.on("error", (err) => {
+    console.error(`Retry attempt ${retryCount + 1} failed: `, err.message);
+    setTimeout(() => {
+      retryWebSocketConnection(host, ws, retryCount + 1);
+    }, Math.min(1000 * 2 ** retryCount, 10000));
+  });
+
+  retrySocket.on("open", () => {
+    ws.send(
+      JSON.stringify({
+        status: "processed",
+        message: `connected to ${host} after ${retryCount} retry(ies)`,
+      })
+    );
+    consumers.get(ws).providers.push(retrySocket);
+  });
 }
