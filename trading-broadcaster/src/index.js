@@ -5,7 +5,7 @@ const consumers = new Map();
 createTradingBroadcastServer();
 
 const getSymbols = async (symbols) => {
-  const uniqueSymbols = [...new Set(symbols.map((symbol) => symbol.id))]; // Filter unique symbols
+  const uniqueSymbols = [...new Set(symbols)]; // Filter unique symbols
   const promises = uniqueSymbols.map(async (id) => {
     const url = `http://localhost:3000/api/symbols/${id}`;
     try {
@@ -23,7 +23,6 @@ const getSymbols = async (symbols) => {
   });
 
   const results = await Promise.all(promises);
-
   return results.filter((symbol) => symbol !== null);
 };
 
@@ -44,29 +43,52 @@ function createTradingBroadcastServer() {
 
       switch (action) {
         case "add-provider": {
-          if (!symbols || symbols.length === 0) return;
+          if (!symbols || symbols.length === 0) {
+            ws.send(
+              JSON.stringify({
+                status: "not processed",
+                message: "No symbols provided",
+              })
+            );
+            return;
+          }
 
           const validSymbols = await getSymbols(symbols);
+
           const validSymbolIDs = validSymbols.map(
             (symbolData) => symbolData.id
           );
 
           if (validSymbolIDs.length === 0) {
-            console.warn(
-              "No valid symbols found, skipping provider connection."
+            ws.send(
+              JSON.stringify({
+                status: "not processed",
+                message: "Error fetching symbol data",
+              })
             );
+
             return;
           }
 
           const dataProviderSocket = new WebSocket(host);
 
           dataProviderSocket.on("error", (err) => {
-            console.error("Data provider connection error:", err.message);
             dataProviderSocket.close();
+            ws.send(
+              JSON.stringify({
+                status: "not processed",
+                message: `Failed to connect to provider: ${err.message}`,
+              })
+            );
           });
 
           dataProviderSocket.on("open", () => {
-            console.log("Connected to data provider:", host);
+            ws.send(
+              JSON.stringify({
+                status: "processed",
+                message: `connected to ${host}`,
+              })
+            );
           });
 
           dataProviderSocket.on("message", (providerMessage) => {
@@ -99,14 +121,23 @@ function createTradingBroadcastServer() {
             providerSocket.close()
           );
           consumerData.providers = [];
-          console.log("Cleared all providers for this consumer");
+          ws.send(JSON.stringify({ status: "processed" }));
           break;
         }
 
         case "clear-prices": {
           consumers.get(ws).latestPrices.clear();
           ws.send(JSON.stringify({ action: "clear-prices" }));
-          console.log("Cleared all prices for this consumer");
+          ws.send(JSON.stringify({ status: "processed" }));
+          break;
+        }
+        default: {
+          ws.send(
+            JSON.stringify({
+              status: "not processed",
+              message: "Unknown action",
+            })
+          );
           break;
         }
       }
