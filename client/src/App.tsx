@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import "./App.css";
-import StockDisplay from "./components/stockDisplay";
 
 export type StockUpdate = {
   symbol: string;
@@ -9,31 +8,50 @@ export type StockUpdate = {
   timestamp: number;
 };
 
-type AddProviderMessage = {
-  action: "add-provider";
+enum Action {
+  ADD = "add-provider",
+  CLEAR = "clear-provider",
+  CLEAR_PRICES = "clear-prices",
+}
+
+type ProviderMessage = {
+  action: Action;
   host: string;
   symbols: string[];
 };
 
+const chosenSymbols = [
+  "a631dc6c-ee85-458d-8d07-50018aedfbad",
+  "9e8bff74-50cd-4d80-900c-b5ce3bf371ee",
+];
+
 function App() {
   const [stockData, setStockData] = useState<StockUpdate[]>([]);
-  const [chosenSymbols, setChosenSymbols] = useState<string[]>([]);
+  const [action, setAction] = useState<Action>();
 
   useEffect(() => {
     const ws = new WebSocket("ws://localhost:9000");
 
-    const sendAddProviderMessage = () => {
-      const message: AddProviderMessage = {
-        action: "add-provider",
-        host: "ws://localhost:9001",
-        symbols: chosenSymbols,
-      };
-      ws.send(JSON.stringify(message));
-    };
+    switch (action) {
+      case Action.ADD: {
+        const message: ProviderMessage = {
+          action: Action.ADD,
+          host: "ws://localhost:9001",
+          symbols: chosenSymbols,
+        };
+        ws.send(JSON.stringify(message));
+        break;
+      }
+      case Action.CLEAR:
+        ws.send(JSON.stringify({ action: "clear-providers" }));
+        break;
+      case Action.CLEAR_PRICES:
+        ws.send(JSON.stringify({ action: "clear-prices" }));
+        break;
+    }
 
     ws.onopen = () => {
       console.log("WebSocket connection opened");
-      sendAddProviderMessage();
     };
 
     ws.onmessage = (event) => {
@@ -54,12 +72,10 @@ function App() {
     return () => {
       ws.close();
     };
-  }, [chosenSymbols]);
+  }, [action]);
 
-  console.log(chosenSymbols);
   return (
     <div className="App">
-      {/* // <StockDisplay stocks={[]} /> */}
       <h1>Stock Updates</h1>
       <ul>
         {stockData.map((stock, index) => (
@@ -72,16 +88,10 @@ function App() {
       </ul>
 
       <div>
-        <input type="checkbox" />
-        <button
-          onClick={() =>
-            setChosenSymbols([
-              "a631dc6c-ee85-458d-8d07-50018aedfbad",
-              "9e8bff74-50cd-4d80-900c-b5ce3bf371ee",
-            ])
-          }
-        >
-          Add stocks
+        <button onClick={() => setAction(Action.ADD)}>Add providers</button>
+        <button onClick={() => setAction(Action.CLEAR)}>Clear providers</button>
+        <button onClick={() => setAction(Action.CLEAR_PRICES)}>
+          Clear Prices
         </button>
       </div>
     </div>
