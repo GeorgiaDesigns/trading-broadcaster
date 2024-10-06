@@ -40,7 +40,6 @@ function createTradingBroadcastServer() {
 
     ws.on("message", async (message) => {
       const { action, host, symbols } = JSON.parse(message);
-      console.log(consumers.get(ws));
 
       switch (action) {
         case "add-provider": {
@@ -94,19 +93,20 @@ function createTradingBroadcastServer() {
 
             if (!validSymbolIDs.includes(symbol)) return;
 
-            const consumerData = consumers.get(ws);
-            const latestPrices = consumerData.latestPrices;
+            //const consumerData = consumers.get(ws);
+            consumers.forEach((consumerData, ws) => {
+              const latestPrices = consumerData.latestPrices;
+              console.log(consumerData);
+              if (
+                !latestPrices.has(symbol) ||
+                timestamp > latestPrices.get(symbol).timestamp
+              ) {
+                latestPrices.set(symbol, { price, timestamp });
 
-            if (
-              !latestPrices.has(symbol) ||
-              timestamp > latestPrices.get(symbol).timestamp
-            ) {
-              latestPrices.set(symbol, { price, timestamp });
-
-              ws.send(JSON.stringify(stockUpdate));
-            }
+                ws.send(JSON.stringify(stockUpdate));
+              }
+            });
           });
-
           break;
         }
 
