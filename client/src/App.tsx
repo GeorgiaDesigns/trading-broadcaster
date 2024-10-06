@@ -27,9 +27,21 @@ const chosenSymbols = [
   "256c6786-5198-4d11-951b-3cea4e5e6af4",
 ];
 
+function isStockUpdate(msg: any): msg is StockUpdate {
+  return (
+    msg &&
+    typeof msg.symbol === "string" &&
+    typeof msg.price === "number" &&
+    typeof msg.quantity === "number" &&
+    typeof msg.timestamp === "number"
+  );
+}
+
 function App() {
   const [stockData, setStockData] = useState<StockUpdate[]>([]);
   const [action, setAction] = useState<Action>();
+  const [port, setPort] = useState("9001");
+
   const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(
     "ws://localhost:9000"
   );
@@ -42,7 +54,7 @@ function App() {
         case Action.ADD: {
           const message: ProviderMessage = {
             action: Action.ADD,
-            host: "ws://localhost:9001",
+            host: `ws://localhost:${port}`,
             symbols: chosenSymbols,
           };
 
@@ -59,29 +71,37 @@ function App() {
           break;
       }
     }
-  }, [readyState, action]);
+  }, [readyState, action, sendJsonMessage, port]);
 
   useEffect(() => {
-    // const stockUpdate: StockUpdate = JSON.parse(lastJsonMessage);
-    console.log("Received stock update:", lastJsonMessage);
-    // setStockData((prevData) => [...prevData, stockUpdate]);
+    if (isStockUpdate(lastJsonMessage)) {
+      console.log("Received stock update:", lastJsonMessage);
+      setStockData((prevData) => [...prevData, lastJsonMessage]);
+    } else console.log(lastJsonMessage);
   }, [lastJsonMessage]);
 
   return (
     <div className="App">
       <h1>Stock Updates</h1>
       <ul>
-        {/* {stockData.map((stock, index) => (
-          <li key={index}>
-            Symbol: {stock.symbol}, Price: {stock.price}, Quantity:
-            {stock.quantity}, Timestamp:
-            {new Date(stock.timestamp * 1000).toLocaleString()}
-          </li>
-        ))} */}
+        {isStockUpdate(lastJsonMessage) &&
+          stockData.map((stock, index) => (
+            <li key={index}>
+              Symbol: {stock.symbol}, Price: {stock.price}, Quantity:
+              {stock.quantity}, Timestamp:
+              {new Date(stock.timestamp * 1000).toLocaleString()}
+            </li>
+          ))}
       </ul>
 
       <div>
-        <button onClick={() => setAction(Action.ADD)}>Add providers</button>
+        Provider port:
+        <input
+          type="number"
+          value={port}
+          onChange={(e) => setPort(e.target.value)}
+        />
+        <button onClick={() => setAction(Action.ADD)}>Add provider</button>
         <button onClick={() => setAction(Action.CLEAR)}>Clear providers</button>
         <button onClick={() => setAction(Action.CLEAR_PRICES)}>
           Clear Prices

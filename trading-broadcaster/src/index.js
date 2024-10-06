@@ -40,6 +40,7 @@ function createTradingBroadcastServer() {
 
     ws.on("message", async (message) => {
       const { action, host, symbols } = JSON.parse(message);
+      console.log(consumers.get(ws));
 
       switch (action) {
         case "add-provider": {
@@ -73,13 +74,8 @@ function createTradingBroadcastServer() {
           const dataProviderSocket = new WebSocket(host);
 
           dataProviderSocket.on("error", (err) => {
-            console.error(
-              `Retry attempt ${retryCount + 1} failed: `,
-              err.message
-            );
-            setTimeout(() => {
-              retryWebSocketConnection(host, ws, retryCount + 1);
-            }, Math.min(1000 * 2 ** retryCount, 10000));
+            retryWebSocketConnection(host, ws);
+            console.error(err);
           });
 
           dataProviderSocket.on("open", () => {
@@ -89,6 +85,7 @@ function createTradingBroadcastServer() {
                 message: `connected to ${host}`,
               })
             );
+            consumers.get(ws).providers.push(dataProviderSocket);
           });
 
           dataProviderSocket.on("message", (providerMessage) => {
@@ -109,8 +106,6 @@ function createTradingBroadcastServer() {
               ws.send(JSON.stringify(stockUpdate));
             }
           });
-
-          consumers.get(ws).providers.push(dataProviderSocket);
 
           break;
         }
