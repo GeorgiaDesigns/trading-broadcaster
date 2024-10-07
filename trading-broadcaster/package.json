@@ -8,13 +8,13 @@
     "start": "npm run build && node ./dist/index.js"
   },
   "dependencies": {
+    "@babel/core": "^7.21.5",
     "axios": "^1.6.7",
     "react-use-websocket": "3.0.0",
     "ws": "^8.13.0"
   },
   "devDependencies": {
     "@babel/cli": "^7.21.5",
-    "@babel/core": "^7.21.8",
     "@babel/preset-env": "^7.21.5",
     "jest": "^29.7.0"
   }

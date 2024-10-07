@@ -1,4 +1,5 @@
 import WebSocket from "ws";
+const axios = require("axios");
 
 const consumers = new Map();
 
@@ -9,13 +10,8 @@ const getSymbols = async (symbols) => {
   const promises = uniqueSymbols.map(async (id) => {
     const url = `http://localhost:3000/api/symbols/${id}`;
     try {
-      const response = await fetch(url);
-      if (!response.ok)
-        throw new Error(
-          `Error fetching symbol: ${id} - Status: ${response.status}`
-        );
-      const json = await response.json();
-      return json;
+      const response = await axios.get(url);
+      return response.data;
     } catch (error) {
       console.error(`Symbol fetch error for ID ${id}:`, error.message);
       return null;
