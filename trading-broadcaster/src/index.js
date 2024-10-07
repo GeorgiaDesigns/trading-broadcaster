@@ -155,7 +155,7 @@ function retryWebSocketConnection(host, ws, retryCount = 0) {
     ws.send(
       JSON.stringify({
         status: "not processed",
-        message: `Failed to connect to provider after multiple attempts: ${host}`,
+        message: `error connecting to ${host}`,
       })
     );
     return;

@@ -57,7 +57,7 @@ function App() {
             host: `ws://localhost:${port}`,
             symbols: chosenSymbols,
           };
-
+          console.log("sent message:" + JSON.stringify(message));
           sendJsonMessage(message);
           break;
         }
