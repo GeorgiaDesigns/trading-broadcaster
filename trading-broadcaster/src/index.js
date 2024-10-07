@@ -5,7 +5,7 @@ const consumers = new Map();
 
 createTradingBroadcastServer();
 
-const getSymbols = async (symbols) => {
+async function getSymbols(symbols) {
   const uniqueSymbols = [...new Set(symbols)];
   const promises = uniqueSymbols.map(async (id) => {
     const url = `http://localhost:3000/api/symbols/${id}`;
@@ -20,7 +20,7 @@ const getSymbols = async (symbols) => {
 
   const results = await Promise.all(promises);
   return results.filter((symbol) => symbol !== null);
-};
+}
 
 function createTradingBroadcastServer() {
   const tradingBroadcastServer = new WebSocket.Server({ port: 9000 });
@@ -32,96 +32,28 @@ function createTradingBroadcastServer() {
   tradingBroadcastServer.on("connection", (ws) => {
     console.log("Client connected");
 
-    consumers.set(ws, { providers: [], latestPrices: new Map() });
+    consumers.set(ws, {
+      providers: [],
+      latestPrices: new Map(),
+      retrying: false,
+    });
 
     ws.on("message", async (message) => {
       const { action, host, symbols } = JSON.parse(message);
 
       switch (action) {
-        case "add-provider": {
-          if (!symbols || symbols.length === 0) {
-            ws.send(
-              JSON.stringify({
-                status: "not processed",
-                message: "No symbols provided",
-              })
-            );
-            return;
-          }
-
-          const validSymbols = await getSymbols(symbols);
-
-          const validSymbolIDs = validSymbols.map(
-            (symbolData) => symbolData.id
-          );
-
-          if (validSymbolIDs.length === 0) {
-            ws.send(
-              JSON.stringify({
-                status: "not processed",
-                message: "Error fetching symbol data",
-              })
-            );
-
-            return;
-          }
-
-          const dataProviderSocket = new WebSocket(host);
-
-          dataProviderSocket.on("error", (err) => {
-            retryWebSocketConnection(host, ws);
-            console.error(err);
-          });
-
-          dataProviderSocket.on("open", () => {
-            ws.send(
-              JSON.stringify({
-                status: "processed",
-                message: `connected to ${host}`,
-              })
-            );
-            consumers.get(ws).providers.push(dataProviderSocket);
-          });
-
-          dataProviderSocket.on("message", (providerMessage) => {
-            const stockUpdate = JSON.parse(providerMessage);
-            const { symbol, price, timestamp } = stockUpdate;
-
-            if (!validSymbolIDs.includes(symbol)) return;
-
-            //const consumerData = consumers.get(ws);
-            consumers.forEach((consumerData, ws) => {
-              const latestPrices = consumerData.latestPrices;
-              console.log(consumerData);
-              if (
-                !latestPrices.has(symbol) ||
-                timestamp > latestPrices.get(symbol).timestamp
-              ) {
-                latestPrices.set(symbol, { price, timestamp });
-
-                ws.send(JSON.stringify(stockUpdate));
-              }
-            });
-          });
+        case "add-provider":
+          await handleAddProvider(ws, host, symbols);
           break;
-        }
-
-        case "clear-providers": {
-          const consumerData = consumers.get(ws);
-          consumerData.providers.forEach((providerSocket) =>
-            providerSocket.close()
-          );
-          consumerData.providers = [];
+        case "clear-providers":
+          closeProviders(ws);
           ws.send(JSON.stringify({ status: "processed" }));
           break;
-        }
-
-        case "clear-prices": {
+        case "clear-prices":
           consumers.get(ws).latestPrices.clear();
           ws.send(JSON.stringify({ status: "processed" }));
           break;
-        }
-        default: {
+        default:
           ws.send(
             JSON.stringify({
               status: "not processed",
@@ -129,16 +61,15 @@ function createTradingBroadcastServer() {
             })
           );
           break;
-        }
       }
     });
 
     ws.on("close", () => {
       const consumerData = consumers.get(ws);
       if (consumerData) {
-        consumerData.providers.forEach((providerSocket) =>
-          providerSocket.close()
-        );
+        consumerData.retrying = false;
+
+        closeProviders(ws);
         consumers.delete(ws);
         console.log(
           `Client disconnected, resources cleaned up. Active consumers: ${consumers.size}`
@@ -150,8 +81,82 @@ function createTradingBroadcastServer() {
   return tradingBroadcastServer;
 }
 
+function closeProviders(ws) {
+  const consumerData = consumers.get(ws);
+  if (consumerData) {
+    consumerData.providers.forEach((providerSocket) => providerSocket.close());
+    consumerData.providers = [];
+  }
+}
+
+async function handleAddProvider(ws, host, symbols) {
+  if (!symbols || symbols.length === 0) {
+    return ws.send(
+      JSON.stringify({
+        status: "not processed",
+        message: "No symbols provided",
+      })
+    );
+  }
+
+  const validSymbols = await getSymbols(symbols);
+  const validSymbolIDs = new Set(
+    validSymbols.map((symbolData) => symbolData.id)
+  );
+
+  if (validSymbolIDs.length === 0) {
+    return ws.send(
+      JSON.stringify({
+        status: "not processed",
+        message: "Error fetching symbol data",
+      })
+    );
+  }
+
+  const dataProviderSocket = new WebSocket(host);
+
+  dataProviderSocket.on("error", (err) => {
+    retryWebSocketConnection(host, ws);
+    console.error(err);
+  });
+
+  dataProviderSocket.on("open", () => {
+    ws.send(
+      JSON.stringify({
+        status: "processed",
+        message: `connected to ${host}`,
+      })
+    );
+    consumers.get(ws).providers.push(dataProviderSocket);
+  });
+
+  dataProviderSocket.on("message", (providerMessage) => {
+    const stockUpdate = JSON.parse(providerMessage);
+    const { symbol, price, timestamp } = stockUpdate;
+
+    if (!validSymbolIDs.has(symbol)) return;
+
+    const consumerData = consumers.get(ws);
+    const latestPrices = consumerData.latestPrices;
+
+    if (
+      !latestPrices.has(symbol) ||
+      timestamp > latestPrices.get(symbol).timestamp
+    ) {
+      latestPrices.set(symbol, { price, timestamp });
+      ws.send(JSON.stringify(stockUpdate));
+    }
+  });
+}
+
 function retryWebSocketConnection(host, ws, retryCount = 0) {
+  const consumerData = consumers.get(ws);
+
+  consumerData.retrying = true;
+
   if (retryCount > 3) {
+    consumerData.retrying = false;
+
     ws.send(
       JSON.stringify({
         status: "not processed",
@@ -171,6 +176,7 @@ function retryWebSocketConnection(host, ws, retryCount = 0) {
   });
 
   retrySocket.on("open", () => {
+    consumerData.retrying = false;
     ws.send(
       JSON.stringify({
         status: "processed",
